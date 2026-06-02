@@ -38,7 +38,7 @@ public class MainAppFrame extends JFrame {
         // 2. Panel Tengah: Form Input Penimbangan User
         JPanel panelTengah = new JPanel(new GridBagLayout());
         panelTengah.setBorder(BorderFactory.createTitledBorder("Form Input Penimbangan Sampah"));
-        panelTengah.setPreferredSize(new Dimension(880, 150));
+        panelTengah.setPreferredSize(new Dimension(880, 180));
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.insets = new Insets(5, 5, 5, 5);
         gbc.fill = GridBagConstraints.HORIZONTAL;
@@ -62,6 +62,14 @@ public class MainAppFrame extends JFrame {
         lblHasilKalkulasi = new JLabel("Total Konversi Nilai: Rp 0.00");
         lblHasilKalkulasi.setFont(new Font("Arial", Font.BOLD, 13));
         panelTengah.add(lblHasilKalkulasi, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 3;
+        gbc.gridwidth = 2;
+        JProgressBar progressBar = new JProgressBar();
+        progressBar.setIndeterminate(true);
+        progressBar.setVisible(false);
+        panelTengah.add(progressBar, gbc);
+        gbc.gridwidth = 1;
 
         // 3. Panel Bawah: Tabel Riwayat History User
         JPanel panelBawah = new JPanel(new BorderLayout());
@@ -137,23 +145,44 @@ public class MainAppFrame extends JFrame {
 
                 lblHasilKalkulasi.setText(String.format("Total Konversi Nilai: Rp %.2f", totalHarga));
 
-                // Simpan ke MySQL
-                Connection conn = Koneksi.getKoneksi();
-                String sqlInsert = "INSERT INTO t_history_transaksi (nama_sampah, kategori, berat, total_harga) VALUES (?, ?, ?, ?)";
-                PreparedStatement pst = conn.prepareStatement(sqlInsert);
-                pst.setString(1, sampahTerpilih.getNama());
-                pst.setString(2, sampahTerpilih.getKategori());
-                pst.setDouble(3, berat);
-                pst.setDouble(4, totalHarga);
-                pst.executeUpdate();
+                btnHitungSimpan.setEnabled(false); // Nonaktifkan tombol saat proses
+                progressBar.setVisible(true); // Tampilkan indikator loading
 
-                // Simpan ke File CSV
-                CsvWriter.simpanKeCsv(sampahTerpilih.getNama(), sampahTerpilih.getKategori(), berat, totalHarga);
+                SwingWorker<Void, Void> worker = new SwingWorker<Void, Void>() {
+                    @Override
+                    protected Void doInBackground() throws Exception {
+                        // Simpan ke MySQL
+                        Connection conn = Koneksi.getKoneksi();
+                        String sqlInsert = "INSERT INTO t_history_transaksi (nama_sampah, kategori, berat, total_harga) VALUES (?, ?, ?, ?)";
+                        PreparedStatement pst = conn.prepareStatement(sqlInsert);
+                        pst.setString(1, sampahTerpilih.getNama());
+                        pst.setString(2, sampahTerpilih.getKategori());
+                        pst.setDouble(3, berat);
+                        pst.setDouble(4, totalHarga);
+                        pst.executeUpdate();
 
-                JOptionPane.showMessageDialog(this, "Transaksi Berhasil Dicatat!");
-                
-                muatTabelHistoryTransaksi();
-                txtBerat.setText("1.0");
+                        // Simpan ke File CSV
+                        CsvWriter.simpanKeCsv(sampahTerpilih.getNama(), sampahTerpilih.getKategori(), berat, totalHarga);
+
+                        return null;
+                    }
+
+                    @Override
+                    protected void done() {
+                        btnHitungSimpan.setEnabled(true); // Aktifkan tombol kembali
+                        progressBar.setVisible(false); // Sembunyikan indikator loading
+                        try {
+                            get(); // Memeriksa exception dari doInBackground
+                            JOptionPane.showMessageDialog(MainAppFrame.this, "Transaksi Berhasil Dicatat!");
+                            
+                            muatTabelHistoryTransaksi();
+                            txtBerat.setText("1.0");
+                        } catch (Exception ex) {
+                            JOptionPane.showMessageDialog(MainAppFrame.this, "Terjadi kesalahan: " + (ex.getCause() != null ? ex.getCause().getMessage() : ex.getMessage()), "Error", JOptionPane.ERROR_MESSAGE);
+                        }
+                    }
+                };
+                worker.execute();
 
             } catch (NumberFormatException nfe) {
                 JOptionPane.showMessageDialog(this, "Input berat harus berupa angka desimal!", "Format Error", JOptionPane.ERROR_MESSAGE);
@@ -200,7 +229,7 @@ public class MainAppFrame extends JFrame {
     private void muatTabelHistoryTransaksi() {
         modelHistory.setRowCount(0);
         try {
-            Connection conn = Koneksi.getKoneksi();
+            Connection conn = Koneksi.getKoneksi();       
             Statement stmt = conn.createStatement();
             ResultSet rs = stmt.executeQuery("SELECT * FROM t_history_transaksi ORDER BY waktu_input DESC");
 
